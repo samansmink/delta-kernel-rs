@@ -485,6 +485,9 @@ fn apply_schema_to_map(array: &dyn Array, kernel_map_type: &MapType) -> DeltaRes
         transformed_map_struct_array.data_type().clone(),
         map_field.is_nullable(),
     );
+
+    println!("MapArray::try_new transformed_map_field: {transformed_map_field:?}");
+    println!("MapArray::try_new transformed_map_struct_array: {transformed_map_struct_array:?}");
     Ok(MapArray::try_new(
         Arc::new(transformed_map_field),
         offset_buffer,
