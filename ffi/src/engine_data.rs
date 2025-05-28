@@ -2,7 +2,7 @@
 
 #[cfg(feature = "default-engine")]
 use delta_kernel::arrow::array::{
-    ffi::{FFI_ArrowArray, FFI_ArrowSchema},
+    ffi::{from_ffi, FFI_ArrowArray, FFI_ArrowSchema},
     ArrayData, StructArray,
 };
 #[cfg(feature = "default-engine")]
@@ -92,4 +92,26 @@ fn get_raw_arrow_data_impl(data: Box<dyn EngineData>) -> DeltaResult<*mut ArrowF
     let schema = FFI_ArrowSchema::try_from(array_data.data_type())?;
     let ret_data = Box::new(ArrowFFIData { array, schema });
     Ok(Box::leak(ret_data))
+}
+
+// TODO: explain ownership semantics: both schema and array ownership moved in here now.
+#[cfg(feature = "default-engine")]
+#[no_mangle]
+pub unsafe extern "C" fn get_engine_data(
+    array: FFI_ArrowArray,
+    schema: &FFI_ArrowSchema,
+    engine: Handle<SharedExternEngine>,
+) -> ExternResult<Handle<ExclusiveEngineData>> {
+    get_engine_data_impl(array, schema)
+        .map(Into::into)
+        .into_extern_result(&engine.as_ref())
+}
+
+#[cfg(feature = "default-engine")]
+unsafe fn get_engine_data_impl(array: FFI_ArrowArray, schema: &FFI_ArrowSchema) -> DeltaResult<Box<dyn EngineData>> {
+    let array_data = unsafe { from_ffi(array, schema)};
+    let array = StructArray::from(array_data?);
+    let record_batch = delta_kernel::arrow::array::RecordBatch::from(array);
+    let engine_data = delta_kernel::engine::arrow_data::ArrowEngineData::from(record_batch);
+    Ok(Box::new(engine_data))
 }
