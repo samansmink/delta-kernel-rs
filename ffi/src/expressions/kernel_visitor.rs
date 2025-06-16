@@ -5,7 +5,8 @@ use crate::{
     ReferenceSet, TryFromStringSlice,
 };
 use delta_kernel::expressions::{
-    BinaryExpressionOp, BinaryPredicateOp, ColumnName, Expression, Predicate, UnaryPredicateOp,
+    BinaryExpressionOp, BinaryPredicateOp, ColumnName, Expression, Predicate, Scalar,
+    UnaryPredicateOp,
 };
 use delta_kernel::DeltaResult;
 
@@ -302,4 +303,28 @@ pub extern "C" fn visit_expression_literal_bool(
     value: bool,
 ) -> usize {
     wrap_expression(state, Expression::literal(value))
+}
+
+#[no_mangle]
+pub extern "C" fn visit_expression_literal_timestamp(
+    state: &mut KernelExpressionVisitorState,
+    value: i64,
+) -> usize {
+    wrap_expression(state, Expression::literal(Scalar::Timestamp(value)))
+}
+
+#[no_mangle]
+pub extern "C" fn visit_expression_literal_timestamp_ntz(
+    state: &mut KernelExpressionVisitorState,
+    value: i64,
+) -> usize {
+    wrap_expression(state, Expression::literal(Scalar::TimestampNtz(value)))
+}
+
+#[no_mangle]
+pub extern "C" fn visit_expression_literal_date(
+    state: &mut KernelExpressionVisitorState,
+    value: i32,
+) -> usize {
+    wrap_expression(state, Expression::literal(Scalar::Date(value)))
 }
