@@ -21,10 +21,9 @@ use delta_kernel::DeltaResult;
 use delta_kernel::Error as KernelError;
 use delta_kernel::Snapshot;
 
-use test_utils::{create_table, engine_store_setup, setup_test_tables};
+use test_utils::{create_table, engine_store_setup, setup_test_tables, test_read};
 
 mod common;
-use test_utils::test_read;
 
 // create commit info in arrow of the form {engineInfo: "default engine"}
 fn new_commit_info() -> DeltaResult<Box<ArrowEngineData>> {
@@ -77,7 +76,9 @@ async fn test_commit_info() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table_url, engine, store, table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, store, table_name) in
+        setup_test_tables(schema, &[], None, "test_table").await?
+    {
         let commit_info = new_commit_info()?;
 
         // create a transaction
@@ -127,7 +128,9 @@ async fn test_empty_commit() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table_url, engine, _store, _table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, _store, _table_name) in
+        setup_test_tables(schema, &[], None, "test_table").await?
+    {
         let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
         assert!(matches!(
             snapshot.transaction()?.commit(&engine).unwrap_err(),
@@ -147,7 +150,9 @@ async fn test_invalid_commit_info() -> Result<(), Box<dyn std::error::Error>> {
         "number",
         DataType::INTEGER,
     )]));
-    for (table_url, engine, _store, _table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, _store, _table_name) in
+        setup_test_tables(schema, &[], None, "test_table").await?
+    {
         // empty commit info test
         let commit_info_schema = Arc::new(ArrowSchema::empty());
         let commit_info_batch = RecordBatch::new_empty(commit_info_schema.clone());
@@ -258,7 +263,9 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table_url, engine, store, table_name) in setup_test_tables(schema.clone(), &[]).await? {
+    for (table_url, engine, store, table_name) in
+        setup_test_tables(schema.clone(), &[], None, "test_table").await?
+    {
         let commit_info = new_commit_info()?;
 
         let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
@@ -390,7 +397,7 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
     )]));
 
     for (table_url, engine, store, table_name) in
-        setup_test_tables(table_schema.clone(), &[partition_col]).await?
+        setup_test_tables(table_schema.clone(), &[partition_col], None, "test_table").await?
     {
         let commit_info = new_commit_info()?;
 
@@ -530,7 +537,9 @@ async fn test_append_invalid_schema() -> Result<(), Box<dyn std::error::Error>> 
         DataType::STRING,
     )]));
 
-    for (table_url, engine, _store, _table_name) in setup_test_tables(table_schema, &[]).await? {
+    for (table_url, engine, _store, _table_name) in
+        setup_test_tables(table_schema, &[], None, "test_table").await?
+    {
         let commit_info = new_commit_info()?;
 
         let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
@@ -587,7 +596,9 @@ async fn test_write_txn_actions() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table_url, engine, store, table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, store, table_name) in
+        setup_test_tables(schema, &[], None, "test_table").await?
+    {
         let commit_info = new_commit_info()?;
 
         // can't have duplicate app_id in same transaction
@@ -719,7 +730,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
         DataType::TIMESTAMP_NTZ,
     )]));
 
-    let (store, engine, table_location) = engine_store_setup("test_table_timestamp_ntz", true);
+    let (store, engine, table_location) = engine_store_setup("test_table_timestamp_ntz", None);
     let table_url = create_table(
         store.clone(),
         table_location,
