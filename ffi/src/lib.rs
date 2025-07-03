@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tracing::debug;
 use url::Url;
 
+use delta_kernel::actions::DomainMetadata;
 use delta_kernel::schema::Schema;
 use delta_kernel::snapshot::Snapshot;
 use delta_kernel::Version;
@@ -557,6 +558,9 @@ pub struct SharedSchema;
 #[handle_descriptor(target=Snapshot, mutable=false, sized=true)]
 pub struct SharedSnapshot;
 
+#[handle_descriptor(target=DomainMetadata, mutable=false, sized=true)]
+pub struct SharedDomainMetadata;
+
 /// Get the latest snapshot from the specified table
 ///
 /// # Safety
@@ -635,6 +639,47 @@ pub unsafe extern "C" fn logical_schema(snapshot: Handle<SharedSnapshot>) -> Han
 #[no_mangle]
 pub unsafe extern "C" fn free_schema(schema: Handle<SharedSchema>) {
     schema.drop_handle();
+}
+
+/// Get domain metadata for a specific domain from a snapshot
+///
+/// # Safety
+///
+/// Caller is responsible for passing valid handles and domain pointer.
+#[no_mangle]
+pub unsafe extern "C" fn get_domain_metadata(
+    snapshot: Handle<SharedSnapshot>,
+    domain: KernelStringSlice,
+    engine: Handle<SharedExternEngine>,
+    allocate_fn: AllocateStringFn,
+    allocate_error: AllocateErrorFn,
+) -> ExternResult<NullableCvoid> {
+    let snapshot = unsafe { snapshot.as_ref() };
+    let domain_string: String =
+        unsafe { TryFromStringSlice::try_from_slice(&domain).expect("domain is not null") };
+    let engine_unwrapped = unsafe { engine.as_ref().engine() };
+
+    get_domain_metadata_impl(
+        snapshot,
+        domain_string.as_str(),
+        &*engine_unwrapped,
+        allocate_fn,
+    )
+    .into_extern_result(&allocate_error)
+}
+
+fn get_domain_metadata_impl(
+    snapshot: &Snapshot,
+    domain_string: &str,
+    engine: &dyn Engine,
+    allocate_fn: AllocateStringFn,
+) -> DeltaResult<NullableCvoid> {
+    let domain_metadata = snapshot.get_domain_metadata(&domain_string, &*engine)?;
+
+    match domain_metadata {
+        Some(metadata) => Ok(allocate_fn(kernel_string_slice!(metadata))),
+        None => Ok(None),
+    }
 }
 
 /// Get the resolved root of the table. This should be used in any future calls that require
@@ -777,13 +822,20 @@ mod tests {
     use delta_kernel::object_store::memory::InMemory;
     use test_utils::{actions_to_string, actions_to_string_partitioned, add_commit, TestAction};
 
+    use serde_json::json;
+
     use super::*;
-    use crate::error::{EngineError, KernelError};
+    use crate::error::{EngineError, EngineErrorWithMessage, KernelError};
 
     #[no_mangle]
-    extern "C" fn allocate_err(etype: KernelError, _: KernelStringSlice) -> *mut EngineError {
-        let boxed = Box::new(EngineError { etype });
-        Box::leak(boxed)
+    extern "C" fn allocate_err(etype: KernelError, message: KernelStringSlice) -> *mut EngineError {
+        let s = unsafe { String::try_from_slice(&message).unwrap() };
+        let boxed = Box::new(EngineErrorWithMessage {
+            etype: etype,
+            message: s,
+        });
+
+        Box::leak(boxed) as *mut EngineErrorWithMessage as *mut EngineError
     }
 
     #[no_mangle]
@@ -795,8 +847,26 @@ mod tests {
     }
 
     // helper to recover an error from the above
-    unsafe fn recover_error(ptr: *mut EngineError) -> EngineError {
-        *Box::from_raw(ptr)
+    unsafe fn recover_error(ptr: *mut EngineError) -> EngineErrorWithMessage {
+        *Box::from_raw(ptr as *mut EngineErrorWithMessage)
+    }
+
+    fn assert_extern_result_error<T>(
+        res: ExternResult<T>,
+        expected_etype: KernelError,
+        expected_message: &str,
+    ) {
+        match res {
+            ExternResult::Err(e) => {
+                let error = unsafe { recover_error(e) };
+                assert_eq!(error.etype, expected_etype);
+                assert_eq!(error.message, expected_message);
+            }
+            _ => panic!(
+                "Expected error of type '{:?}' and message '{}' ",
+                expected_etype, expected_message
+            ),
+        }
     }
 
     // helper to recover a string from the above
@@ -929,6 +999,135 @@ mod tests {
         unsafe { free_string_slice_data(partition_iter) }
         unsafe { free_snapshot(snapshot) }
         unsafe { free_engine(engine) }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_domain_metadata() -> DeltaResult<()> {
+        let storage = Arc::new(InMemory::new());
+
+        let engine = DefaultEngine::new(storage.clone(), Arc::new(TokioBackgroundExecutor::new()));
+        let engine_handle = engine_to_handle(Arc::new(engine), allocate_err);
+        let path = "memory:///";
+
+        // commit0
+        // - domain1: not removed
+        // - domain2: not removed
+        let commit = [
+            json!({
+                "protocol": {
+                    "minReaderVersion": 1,
+                    "minWriterVersion": 1
+                }
+            }),
+            json!({
+                "metaData": {
+                    "id":"5fba94ed-9794-4965-ba6e-6ee3c0d22af9",
+                    "format": { "provider": "parquet", "options": {} },
+                    "schemaString": "{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"val\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}}]}",
+                    "partitionColumns": [],
+                    "configuration": {},
+                    "createdTime": 1587968585495i64
+                }
+            }),
+            json!({
+                "domainMetadata": {
+                    "domain": "domain1",
+                    "configuration": "domain1_commit0",
+                    "removed": false
+                }
+            }),
+            json!({
+                "domainMetadata": {
+                    "domain": "domain2",
+                    "configuration": "domain2_commit0",
+                    "removed": false
+                }
+            }),
+        ]
+            .map(|json| json.to_string())
+            .join("\n");
+
+        add_commit(storage.clone().as_ref(), 0, commit)
+            .await
+            .unwrap();
+
+        // commit1
+        // - domain1: removed
+        // - domain2: not-removed
+        // - internal domain
+        let commit = [
+            json!({
+                "domainMetadata": {
+                    "domain": "domain1",
+                    "configuration": "domain1_commit1",
+                    "removed": true
+                }
+            }),
+            json!({
+                "domainMetadata": {
+                    "domain": "domain2",
+                    "configuration": "domain2_commit1",
+                    "removed": false
+                }
+            }),
+            json!({
+                "domainMetadata": {
+                    "domain": "delta.domain3",
+                    "configuration": "domain3_commit1",
+                    "removed": false
+                }
+            }),
+        ]
+        .map(|json| json.to_string())
+        .join("\n");
+
+        add_commit(storage.as_ref(), 1, commit).await.unwrap();
+
+        let snapshot = unsafe {
+            ok_or_panic(snapshot(
+                kernel_string_slice!(path),
+                engine_handle.shallow_copy(),
+            ))
+        };
+
+        let domain1 = "domain1";
+        let res = unsafe {
+            ok_or_panic(get_domain_metadata(
+                snapshot.clone_handle(),
+                kernel_string_slice!(domain1),
+                engine_handle.clone_handle(),
+                allocate_str,
+                allocate_err,
+            ))
+        };
+        assert!(res.is_none());
+
+        let domain1 = "domain2";
+        let res = unsafe {
+            ok_or_panic(get_domain_metadata(
+                snapshot.clone_handle(),
+                kernel_string_slice!(domain1),
+                engine_handle.clone_handle(),
+                allocate_str,
+                allocate_err,
+            ))
+        };
+        let result = recover_string(res.unwrap());
+        assert_eq!(result, "domain2_commit1");
+
+        let domain1 = "delta.domain3";
+        let res = unsafe {
+            get_domain_metadata(
+                snapshot.clone_handle(),
+                kernel_string_slice!(domain1),
+                engine_handle.clone_handle(),
+                allocate_str,
+                allocate_err,
+            )
+        };
+        assert_extern_result_error(res, KernelError::GenericError, "Generic delta kernel error: User DomainMetadata are not allowed to use system-controlled 'delta.*' domain");
+
         Ok(())
     }
 }
