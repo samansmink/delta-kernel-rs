@@ -286,7 +286,7 @@ mod tests {
         .await?
         {
             let table_path = table_url.as_str();
-            panic!("path: {table_path}");
+            println!("path: {table_path}");
             let engine = get_default_engine(table_path);
 
             // Start the transaction
@@ -319,7 +319,7 @@ mod tests {
             let batch = RecordBatch::try_from_iter(vec![
                 (
                     "number",
-                    Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])) as ArrayRef,
+                    Arc::new(Int32Array::from(vec![2, 2, 3, 4, 5])) as ArrayRef,
                 ),
                 (
                     "string",
