@@ -224,8 +224,7 @@ mod tests {
             .as_millis() as i64;
 
         let file_metadata = format!(
-            r#"{{"path":"{}", "partitionValues": {{}}, "size": {}, "modificationTime": {}, "dataChange": true}}"#,
-            path, num_rows, current_time
+            r#"{{"path":"{path}", "partitionValues": {{}}, "size": {num_rows}, "modificationTime": {current_time}, "dataChange": true}}"#,
         );
 
         create_arrow_ffi_from_json(schema, file_metadata.as_str())
@@ -239,7 +238,7 @@ mod tests {
         // WriterProperties can be used to set Parquet file options
         let props = WriterProperties::builder().build();
 
-        let full_path = format!("{}{}", delta_path, file_path);
+        let full_path = format!("{delta_path}{file_path}");
         let file = std::fs::File::create(&full_path).unwrap();
         let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
 
@@ -287,6 +286,7 @@ mod tests {
         .await?
         {
             let table_path = table_url.as_str();
+            panic!("path: {table_path}");
             let engine = get_default_engine(table_path);
 
             // Start the transaction
