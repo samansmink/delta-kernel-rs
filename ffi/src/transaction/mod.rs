@@ -287,12 +287,13 @@ mod tests {
         )
         .await?
         {
-            let table_path = table_url.as_str();
-            let engine = get_default_engine(table_path);
+            let table_path = table_url.to_file_path().unwrap();
+            let table_path_str = table_path.to_str().unwrap();
+            let engine = get_default_engine(table_path_str);
 
             // Start the transaction
             let txn = ok_or_panic(unsafe {
-                transaction(kernel_string_slice!(table_path), engine.shallow_copy())
+                transaction(kernel_string_slice!(table_path_str), engine.shallow_copy())
             });
 
             // Add some empty commit info
@@ -330,9 +331,7 @@ mod tests {
             ])
             .unwrap();
 
-            let table_path_without_file_prefix = table_path.trim_start_matches("file://");
-            let file_info =
-                write_parquet_file(table_path_without_file_prefix, "my_file.parquet", &batch)?;
+            let file_info = write_parquet_file(table_path_str, "my_file.parquet", &batch)?;
 
             let file_info_engine_data = ok_or_panic(unsafe {
                 get_engine_data(file_info.array, &file_info.schema, engine.shallow_copy())
