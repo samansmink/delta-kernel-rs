@@ -196,12 +196,15 @@ pub fn engine_store_setup(
     DefaultEngine<TokioBackgroundExecutor>,
     Url,
 ) {
-    let (storage, url): (Arc<dyn ObjectStore>, Url) = match local_directory
-    {
-        None => (Arc::new(InMemory::new()), Url::parse("memory:///").expect("valid url")),
+    let (storage, url): (Arc<dyn ObjectStore>, Url) = match local_directory {
+        None => (
+            Arc::new(InMemory::new()),
+            Url::parse(format!("memory:///{table_name}/").as_str()).expect("valid url"),
+        ),
         Some(dir) => (
             Arc::new(LocalFileSystem::new()),
-            Url::parse(format!("{dir}kernel_write_tests/{table_name}/").as_str()).expect("valid url"),
+            Url::parse(format!("{dir}kernel_write_tests/{table_name}/").as_str())
+                .expect("valid url"),
         ),
     };
     let executor = Arc::new(TokioBackgroundExecutor::new());
