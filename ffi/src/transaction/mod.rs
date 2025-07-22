@@ -274,20 +274,20 @@ mod tests {
         // Create a temporary local directory for use during this test
         let tmp_test_dir = tempdir()?;
 
+        let tmp_dir_local_url = Url::from_directory_path(tmp_test_dir.path()).unwrap();
+
         // TODO: test with partitions
         let partition_columns = vec![];
 
         for (table_url, _engine, _store, _table_name) in setup_test_tables(
             schema,
             &partition_columns,
-            tmp_test_dir.path().to_str(),
+            Some(&tmp_dir_local_url),
             "test_table",
         )
         .await?
         {
             let table_path = table_url.as_str();
-            println!("path: {table_path}");
-            assert!(table_path.starts_with("bla"));
             let engine = get_default_engine(table_path);
 
             // Start the transaction

@@ -190,24 +190,20 @@ impl DefaultEngineExtension for DefaultEngine<TokioBackgroundExecutor> {
 // setup default engine with in-memory (=true) or local fs (=false) object store.
 pub fn engine_store_setup(
     table_name: &str,
-    local_directory: Option<&str>,
+    local_directory: Option<&Url>,
 ) -> (
     Arc<dyn ObjectStore>,
     DefaultEngine<TokioBackgroundExecutor>,
     Url,
 ) {
-    let (storage, base_path, base_url): (Arc<dyn ObjectStore>, String, &str) = match local_directory
+    let (storage, url): (Arc<dyn ObjectStore>, Url) = match local_directory
     {
-        None => (Arc::new(InMemory::new()), "/".to_string(), "memory:///"),
+        None => (Arc::new(InMemory::new()), Url::parse("memory:///").expect("valid url")),
         Some(dir) => (
             Arc::new(LocalFileSystem::new()),
-            format!("{dir}/kernel_write_tests/"),
-            "file:///",
+            Url::parse(format!("{dir}kernel_write_tests/{table_name}/").as_str()).expect("valid url"),
         ),
     };
-
-    let table_root_path = Path::from(format!("{base_path}{table_name}"));
-    let url = Url::parse(&format!("{base_url}{table_root_path}/")).unwrap();
     let executor = Arc::new(TokioBackgroundExecutor::new());
     let engine = DefaultEngine::new(Arc::clone(&storage), executor);
 
@@ -289,7 +285,7 @@ pub async fn create_table(
 pub async fn setup_test_tables(
     schema: SchemaRef,
     partition_columns: &[&str],
-    local_directory: Option<&str>,
+    local_directory: Option<&Url>,
     table_base_name: &str,
 ) -> Result<
     Vec<(
