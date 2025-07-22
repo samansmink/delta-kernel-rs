@@ -308,9 +308,9 @@ mod tests {
             let write_path =
                 unsafe { get_write_path(write_context.shallow_copy(), crate::tests::allocate_str) };
             assert!(write_path.is_some());
-            println!("write path: {:?}", write_path);
-            let canonical_write_path = std::fs::canonicalize(
-                crate::tests::recover_string(write_path.unwrap()).trim_start_matches("file://"),
+            let unwrapped_str = crate::tests::recover_string(write_path.unwrap());
+            println!("write path: {:?}", unwrapped_str.as_str());
+            let canonical_write_path = std::fs::canonicalize(unwrapped_str.trim_start_matches("file://"),
             )
             .unwrap();
             let canonical_table_path =
