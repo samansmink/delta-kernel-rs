@@ -308,14 +308,12 @@ mod tests {
             let write_path =
                 unsafe { get_write_path(write_context.shallow_copy(), crate::tests::allocate_str) };
             assert!(write_path.is_some());
-            let unwrapped_str = crate::tests::recover_string(write_path.unwrap());
-            println!("write path: {:?}", unwrapped_str.as_str());
-            let canonical_write_path = std::fs::canonicalize(unwrapped_str.trim_start_matches("file://"),
-            )
-            .unwrap();
-            let canonical_table_path =
-                std::fs::canonicalize(table_path.trim_start_matches("file://")).unwrap();
-            assert_eq!(canonical_write_path, canonical_table_path);
+            let unwrapped_url = crate::tests::recover_string(write_path.unwrap());
+            let parsed_unwrapped_url = Url::parse(&unwrapped_url)?;
+            assert_eq!(
+                std::fs::canonicalize(parsed_unwrapped_url.to_file_path().unwrap())?,
+                std::fs::canonicalize(table_url.to_file_path().unwrap())?
+            );
 
             // Create some test data
             let batch = RecordBatch::try_from_iter(vec![
