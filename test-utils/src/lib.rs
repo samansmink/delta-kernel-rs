@@ -203,8 +203,7 @@ pub fn engine_store_setup(
         ),
         Some(dir) => (
             Arc::new(LocalFileSystem::new()),
-            Url::parse(format!("{dir}kernel_write_tests/{table_name}/").as_str())
-                .expect("valid url"),
+            Url::parse(format!("{dir}{table_name}/").as_str()).expect("valid url"),
         ),
     };
     let executor = Arc::new(TokioBackgroundExecutor::new());
