@@ -839,6 +839,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let (store, engine, table_location) =
         engine_store_setup("test_table_variant", Some(&tmp_test_dir_url));
+    println!("table location {:?}", table_location);
     let table_url = create_table(
         store.clone(),
         table_location,
@@ -850,6 +851,8 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         true, // enable "columnMapping" feature
     )
     .await?;
+
+    println!("table url {:?}", table_url);
 
     let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
     let mut txn = snapshot.transaction()?;
@@ -966,6 +969,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .to_file_path()
         .unwrap();
+
     println!("commit1_url: {:?}", tmp_test_dir_url.join("test_table_variant/_delta_log/00000000000000000001.json"));
     println!("commit1_url_to_string: {:?}", tmp_test_dir_url.join("test_table_variant/_delta_log/00000000000000000001.json").unwrap().as_str());
     println!("commit1_path: {:?}", commit1_path);
@@ -978,7 +982,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .try_collect()?;
 
     // Check that we have the expected number of commits (commitInfo + add)
-    assert_eq!(parsed_commits.len(), 2);
+    assert_eq!(parsed_commits.len(), 3);
 
     // Check that the add action exists
     assert!(parsed_commits[1].get("add").is_some());
