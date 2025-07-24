@@ -153,7 +153,6 @@ impl Transaction {
         let commit_path =
             ParsedLogPath::new_commit(self.read_snapshot.table_root(), commit_version)?;
 
-        println!("commit write path {:?} for version {:?}", commit_path.location, commit_version);
         // step three: commit the actions as a json file in the log
         let json_handler = engine.json_handler();
         match json_handler.write_json_file(&commit_path.location, Box::new(actions), false) {
