@@ -839,7 +839,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let (store, engine, table_location) =
         engine_store_setup("test_table_variant", Some(&tmp_test_dir_url));
-    println!("table location {:?}", table_location);
+
     let table_url = create_table(
         store.clone(),
         table_location,
@@ -851,8 +851,6 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         true, // enable "columnMapping" feature
     )
     .await?;
-
-    println!("table url {:?}", table_url);
 
     let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
     let mut txn = snapshot.transaction()?;
@@ -967,10 +965,6 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let commit1_url = tmp_test_dir_url
         .join("test_table_variant/_delta_log/00000000000000000001.json")
         .unwrap();
-
-    println!("commit1_url: {:?}", commit1_url);
-    println!("commit1_url_to_path: {:?}", commit1_url.path());
-    println!("commit1_path: {:?}", commit1_url);
     let commit1 = store
         .get(&Path::from_url_path(commit1_url.path()).unwrap())
         .await?;
@@ -1140,13 +1134,11 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     txn.commit(engine.as_ref())?;
 
     // Verify the commit was written correctly
-    let commit1_path = tmp_test_dir_url
+    let commit1_url = tmp_test_dir_url
         .join("test_table_variant_2/_delta_log/00000000000000000001.json")
-        .unwrap()
-        .to_file_path()
         .unwrap();
     let commit1 = store
-        .get(&Path::from(commit1_path.to_str().unwrap()))
+        .get(&Path::from_url_path(commit1_url.path()).unwrap())
         .await?;
 
     let parsed_commits: Vec<_> = Deserializer::from_slice(&commit1.bytes().await?)
