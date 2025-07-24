@@ -978,7 +978,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .try_collect()?;
 
     // Check that we have the expected number of commits (commitInfo + add)
-    assert_eq!(parsed_commits.len(), 3);
+    assert_eq!(parsed_commits.len(), 2);
 
     // Check that the add action exists
     assert!(parsed_commits[1].get("add").is_some());
