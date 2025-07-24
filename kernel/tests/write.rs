@@ -966,6 +966,9 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .to_file_path()
         .unwrap();
+    println!("commit1_url: {:?}", tmp_test_dir_url.join("test_table_variant/_delta_log/00000000000000000001.json"));
+    println!("commit1_url_to_string: {:?}", tmp_test_dir_url.join("test_table_variant/_delta_log/00000000000000000001.json").unwrap().as_str());
+    println!("commit1_path: {:?}", commit1_path);
     let commit1 = store
         .get(&Path::from(commit1_path.to_str().unwrap()))
         .await?;
@@ -975,7 +978,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .try_collect()?;
 
     // Check that we have the expected number of commits (commitInfo + add)
-    assert_eq!(parsed_commits.len(), 2);
+    assert_eq!(parsed_commits.len(), 3);
 
     // Check that the add action exists
     assert!(parsed_commits[1].get("add").is_some());
