@@ -151,7 +151,7 @@ mod tests {
         json_string: &str,
     ) -> Result<ArrowFFIData, Box<dyn std::error::Error>> {
         let cursor = std::io::Cursor::new(json_string.as_bytes());
-        let mut reader = arrow_json::reader::ReaderBuilder::new(schema.into())
+        let mut reader = delta_kernel::arrow::json::reader::ReaderBuilder::new(schema.into())
             .build(cursor)
             .unwrap();
         let batch = reader.next().unwrap().unwrap();
