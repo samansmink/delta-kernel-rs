@@ -133,6 +133,9 @@ fn evaluate_transform_expression(
     // Collect output columns directly to avoid creating intermediate Expr::Column instances.
     let mut output_cols = Vec::new();
 
+    print!("OUTPUT_SCHEMA\n{:?}\n", output_schema);
+    print!("TRANSFORM\n{:?}\n\n", transform);
+
     // Helper lambda to get the next output field type
     let mut output_schema_iter = output_schema.fields();
     let mut next_output_type = || {
