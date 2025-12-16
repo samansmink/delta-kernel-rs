@@ -5,10 +5,10 @@ use std::ffi::c_void;
 use delta_kernel::committer::{
     CatalogCommitter, CommitResponse, Committer, Context, StagedCommitter,
 };
-use delta_kernel::{DeltaResult, Engine, Error};
+use delta_kernel::{DeltaResult, Engine, Error, Version};
 use url::Url;
 
-use crate::error::ExternResult;
+use crate::error::{EngineError, ExternResult};
 use crate::handle::Handle;
 use crate::{KernelStringSlice, SharedExternEngine};
 use delta_kernel_ffi_macros::handle_descriptor;
@@ -17,17 +17,39 @@ use delta_kernel_ffi_macros::handle_descriptor;
 /// to 'pass through' to its [`CatalogCommitCallback`].
 pub type ExternContextPtr = *mut c_void;
 
+#[repr(C)]
+pub enum FFICommitResponse {
+    Committed { version: Version },
+    Conflict { version: Version },
+}
+
+impl From<CommitResponse> for FFICommitResponse {
+    fn from(response: CommitResponse) -> Self {
+        match response {
+            CommitResponse::Committed { version } => FFICommitResponse::Committed { version },
+            CommitResponse::Conflict { version } => FFICommitResponse::Conflict { version },
+        }
+    }
+}
+impl From<FFICommitResponse> for CommitResponse {
+    fn from(response: FFICommitResponse) -> Self {
+        match response {
+            FFICommitResponse::Committed { version } => CommitResponse::Committed { version },
+            FFICommitResponse::Conflict { version } => CommitResponse::Conflict { version },
+        }
+    }
+}
+
 /// FFI callback for catalog commit operations
 pub type CatalogCommitCallback = extern "C" fn(
     engine: Handle<SharedExternEngine>,
     staged_commit_path: KernelStringSlice,
     context: ExternContextPtr,
-) -> ExternResult<CommitResponse>;
+) -> ExternResult<FFICommitResponse>;
 
 /// Handle for a mutable boxed committer that can be passed across FFI
 #[handle_descriptor(target = dyn Committer, mutable = true)]
 pub struct MutableCommitter;
-
 /// Wrapper for external context - just holds an opaque pointer
 #[derive(Debug)]
 struct ExternContext {
@@ -75,7 +97,7 @@ impl CatalogCommitter for ExternCatalogCommitter {
 
         // call the callback and convert result
         match (self.callback)(engine_handle, path_slice, extern_context.ptr) {
-            ExternResult::Ok(response) => Ok(response),
+            ExternResult::Ok(response) => Ok(response.into()),
             ExternResult::Err(_) => Err(Error::generic("External catalog commit callback failed")),
         }
     }
