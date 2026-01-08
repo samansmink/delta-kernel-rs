@@ -45,7 +45,7 @@ fn transaction_impl(
     Ok(Box::new(transaction?).into())
 }
 
-/// Start a transaction with a custom committer
+/// Start a transaction with a custom committer from a snapshot
 /// NOTE: This consumes the committer handle
 ///
 /// # Safety
@@ -53,22 +53,20 @@ fn transaction_impl(
 /// Caller is responsible for passing valid handles
 #[no_mangle]
 pub unsafe extern "C" fn transaction_with_committer(
-    path: KernelStringSlice,
-    engine: Handle<SharedExternEngine>,
+    snapshot: Handle<crate::SharedSnapshot>,
     committer: Handle<crate::committer::MutableCommitter>,
+    engine: Handle<SharedExternEngine>,
 ) -> ExternResult<Handle<ExclusiveTransaction>> {
-    let url = unsafe { unwrap_and_parse_path_as_url(path) };
+    let snapshot = unsafe { snapshot.clone_as_arc() };
     let engine = unsafe { engine.as_ref() };
     let committer = unsafe { committer.into_inner() };
-    transaction_with_committer_impl(url, engine, committer).into_extern_result(&engine)
+    transaction_with_committer_impl(snapshot, committer).into_extern_result(&engine)
 }
 
 fn transaction_with_committer_impl(
-    url: DeltaResult<Url>,
-    extern_engine: &dyn ExternEngine,
+    snapshot: std::sync::Arc<Snapshot>,
     committer: Box<dyn Committer>,
 ) -> DeltaResult<Handle<ExclusiveTransaction>> {
-    let snapshot = Snapshot::builder_for(url?).build(extern_engine.engine().as_ref())?;
     let transaction = snapshot.transaction(committer);
     Ok(Box::new(transaction?).into())
 }
