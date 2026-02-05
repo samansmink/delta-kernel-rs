@@ -4,14 +4,10 @@ use delta_kernel::committer::{CommitMetadata, CommitResponse, Committer, Publish
 use delta_kernel::{DeltaResult, Engine, Error as DeltaError, FilteredEngineData};
 use uc_client::models::commits::{Commit, CommitRequest};
 use uc_client::UCCommitsClient;
+use pollster;
 
 /// A [UCCommitter] is a Unity Catalog [`Committer`] implementation for committing to a specific
 /// delta table in UC.
-///
-/// NOTE: this [`Committer`] requires a multi-threaded tokio runtime. That is, whatever
-/// implementation consumes the Committer to commit to the table, must call `commit` from within a
-/// muti-threaded tokio runtime context. Since the default engine uses tokio, this is compatible,
-/// but must ensure that the multi-threaded runtime is used.
 #[derive(Debug, Clone)]
 pub struct UCCommitter<C: UCCommitsClient> {
     commits_client: Arc<C>,
@@ -81,17 +77,15 @@ impl<C: UCCommitsClient + 'static> Committer for UCCommitter<C> {
                 })
                 .transpose()?,
         );
-        let handle = tokio::runtime::Handle::try_current().map_err(|_| {
-            DeltaError::generic("UCCommitter may only be used within a tokio runtime")
+
+        // Use pollster to block on the async commit call without requiring a tokio runtime
+        pollster::block_on(async {
+            self.commits_client
+                .commit(commit_req)
+                .await
+                .map_err(|e| DeltaError::Generic(format!("UC commit error: {e}")))
         })?;
-        tokio::task::block_in_place(|| {
-            handle.block_on(async move {
-                self.commits_client
-                    .commit(commit_req)
-                    .await
-                    .map_err(|e| DeltaError::Generic(format!("UC commit error: {e}")))
-            })
-        })?;
+
         Ok(CommitResponse::Committed {
             file_meta: committed,
         })

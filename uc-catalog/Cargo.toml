@@ -14,6 +14,7 @@ version.workspace = true
 release = false
 
 [dependencies]
+pollster = "0.3"
 delta_kernel = { path = "../kernel", features = ["catalog-managed"] }
 uc-client = { path = "../uc-client" }
 itertools = "0.14"
