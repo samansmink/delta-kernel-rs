@@ -2,10 +2,13 @@
 mod transaction_id;
 mod write_context;
 
+use std::sync::Arc;
+
 use crate::error::{ExternResult, IntoExternResult};
 use crate::handle::Handle;
 use crate::KernelStringSlice;
-use crate::{unwrap_and_parse_path_as_url, TryFromStringSlice};
+use crate::TryFromStringSlice;
+use crate::{unwrap_and_parse_path_as_url, SharedSnapshot};
 use crate::{DeltaResult, ExternEngine, Snapshot, Url};
 use crate::{ExclusiveEngineData, SharedExternEngine};
 use delta_kernel::committer::{Committer, FileSystemCommitter};
@@ -50,7 +53,7 @@ fn transaction_impl(
     Ok(Box::new(transaction?).into())
 }
 
-/// Start a transaction with a custom committer
+/// Start a transaction with a custom committer on an existing snapshot
 /// NOTE: This consumes the committer handle
 ///
 /// # Safety
@@ -58,23 +61,22 @@ fn transaction_impl(
 /// Caller is responsible for passing valid handles
 #[no_mangle]
 pub unsafe extern "C" fn transaction_with_committer(
-    path: KernelStringSlice,
+    snapshot: Handle<SharedSnapshot>,
     engine: Handle<SharedExternEngine>,
     committer: Handle<MutableCommitter>,
 ) -> ExternResult<Handle<ExclusiveTransaction>> {
-    let url = unsafe { unwrap_and_parse_path_as_url(path) };
+    let snapshot = unsafe { snapshot.clone_as_arc() };
     let engine = unsafe { engine.as_ref() };
     let committer = unsafe { committer.into_inner() };
-    transaction_with_committer_impl(url, engine, committer).into_extern_result(&engine)
+    transaction_with_committer_impl(snapshot, engine, committer).into_extern_result(&engine)
 }
 
 fn transaction_with_committer_impl(
-    url: DeltaResult<Url>,
+    snapshot: Arc<Snapshot>,
     extern_engine: &dyn ExternEngine,
     committer: Box<dyn Committer>,
 ) -> DeltaResult<Handle<ExclusiveTransaction>> {
     let engine = extern_engine.engine();
-    let snapshot = Snapshot::builder_for(url?).build(engine.as_ref())?;
     let transaction = snapshot.transaction(committer, engine.as_ref());
     Ok(Box::new(transaction?).into())
 }
@@ -457,6 +459,8 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Mutex;
 
+        use std::os::raw::c_void;
+
         static UC_COMMIT_CALLED: AtomicBool = AtomicBool::new(false);
         static UC_GET_COMMITS_CALLED: AtomicBool = AtomicBool::new(false);
         static LAST_COMMIT_TABLE_ID: Mutex<Option<String>> = Mutex::new(None);
@@ -465,6 +469,7 @@ mod tests {
         // LCOV_EXCL_START
         #[no_mangle]
         extern "C" fn test_uc_get_commits(
+            _context: *const c_void,
             _request: CommitsRequest,
         ) -> Handle<ExclusiveCommitsResponse> {
             panic!("Shouldn't be called");
@@ -473,6 +478,7 @@ mod tests {
 
         #[no_mangle]
         extern "C" fn test_uc_commit(
+            _context: *const c_void,
             request: CommitRequest,
         ) -> OptionalValue<Handle<crate::ExclusiveRustString>> {
             UC_COMMIT_CALLED.store(true, Ordering::SeqCst);
@@ -514,7 +520,13 @@ mod tests {
             let table_path_str = table_path.to_str().unwrap();
             let engine = get_default_engine(table_path_str);
 
-            let uc_client = unsafe { get_uc_commit_client(test_uc_get_commits, test_uc_commit) };
+            let uc_client = unsafe {
+                get_uc_commit_client(
+                    std::ptr::null(),
+                    test_uc_get_commits,
+                    test_uc_commit,
+                )
+            };
             let table_id = "foo";
             let uc_committer = unsafe {
                 ok_or_panic(get_uc_committer(
@@ -524,12 +536,13 @@ mod tests {
                 ))
             };
 
+            // Get a snapshot to pass to transaction_with_committer
+            let snapshot = ok_or_panic(unsafe {
+                crate::snapshot(kernel_string_slice!(table_path_str), engine.shallow_copy())
+            });
+
             let txn = ok_or_panic(unsafe {
-                transaction_with_committer(
-                    kernel_string_slice!(table_path_str),
-                    engine.shallow_copy(),
-                    uc_committer,
-                )
+                transaction_with_committer(snapshot, engine.shallow_copy(), uc_committer)
             });
             unsafe { set_data_change(txn.shallow_copy(), false) };
 

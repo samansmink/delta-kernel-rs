@@ -3,6 +3,7 @@
 use crate::error::{ExternResult, IntoExternResult as _};
 use crate::ExclusiveRustString;
 use crate::{error::AllocateErrorFn, transaction::MutableCommitter};
+use std::os::raw::c_void;
 use std::sync::Arc;
 
 use delta_kernel::committer::Committer;
@@ -118,19 +119,32 @@ pub struct CommitRequest {
 /// }
 /// return response;
 /// ```
-pub type CGetCommits = extern "C" fn(request: CommitsRequest) -> Handle<ExclusiveCommitsResponse>;
+///
+/// The `context` pointer is passed through from the `get_uc_commit_client` call and can be used
+/// to maintain connection-local state.
+pub type CGetCommits =
+    extern "C" fn(context: *const c_void, request: CommitsRequest) -> Handle<ExclusiveCommitsResponse>;
 
 /// The callback that will be called when the client wants to commit. Return `None` on success, or
 /// `Some("error description")` if an error occured.
+///
+/// The `context` pointer is passed through from the `get_uc_commit_client` call and can be used
+/// to maintain connection-local state.
 // Note, it doesn't make sense to return an ExternResult here because that can't hold the string
 // error msg
 pub type CCommit =
-    extern "C" fn(request: CommitRequest) -> OptionalValue<Handle<ExclusiveRustString>>;
+    extern "C" fn(context: *const c_void, request: CommitRequest) -> OptionalValue<Handle<ExclusiveRustString>>;
 
 pub struct FfiUCCommitsClient {
     get_commits_callback: CGetCommits,
     commit_callback: CCommit,
+    context: *const c_void,
 }
+
+// SAFETY: The context pointer is opaque and the connector is responsible for ensuring
+// thread-safety of any data it points to.
+unsafe impl Send for FfiUCCommitsClient {}
+unsafe impl Sync for FfiUCCommitsClient {}
 
 impl uc_client::UCCommitsClient for FfiUCCommitsClient {
     /// Get the latest commits for the table.
@@ -146,7 +160,7 @@ impl uc_client::UCCommitsClient for FfiUCCommitsClient {
             start_version: request.start_version.into(),
             end_version: request.end_version.into(),
         };
-        let c_resp = (self.get_commits_callback)(c_request);
+        let c_resp = (self.get_commits_callback)(self.context, c_request);
         let response = unsafe { c_resp.into_inner() };
         uc_client::Result::Ok(*response)
     }
@@ -173,7 +187,7 @@ impl uc_client::UCCommitsClient for FfiUCCommitsClient {
                 protocol: None.into(),
             };
 
-            match (self.commit_callback)(c_commit_request) {
+            match (self.commit_callback)(self.context, c_commit_request) {
                 OptionalValue::Some(e) => {
                     let boxed_str = unsafe { e.into_inner() }; // get the string back into Box<String>
                     let s: String = *boxed_str; // move back onto the stack
@@ -205,17 +219,24 @@ pub struct SharedFfiUCCommitsClient;
 /// Get a commit client that will call the passed callbacks when it wants to request commits or to
 /// make a commit.
 ///
+/// The `context` pointer is passed through to all callback invocations, allowing the connector to
+/// maintain connection-local state. The connector is responsible for ensuring thread-safety of
+/// any data the context points to.
+///
 /// # Safety
 ///
-///  Caller is responsible for passing a valid pointers for the callbacks
+///  Caller is responsible for passing valid pointers for the callbacks and ensuring the context
+///  pointer (if non-null) remains valid for the lifetime of the returned client.
 #[no_mangle]
 pub unsafe extern "C" fn get_uc_commit_client(
+    context: *const c_void,
     get_commits_callback: CGetCommits,
     commit_callback: CCommit,
 ) -> Handle<SharedFfiUCCommitsClient> {
     Arc::new(FfiUCCommitsClient {
         get_commits_callback,
         commit_callback,
+        context,
     })
     .into()
 }
@@ -365,6 +386,7 @@ mod tests {
 
     #[no_mangle]
     extern "C" fn test_get_commits_callback(
+        _context: *const c_void,
         request: CommitsRequest,
     ) -> Handle<ExclusiveCommitsResponse> {
         GET_COMMITS_CALLED.with(|called| *called.borrow_mut() = true);
@@ -392,6 +414,7 @@ mod tests {
 
     #[no_mangle]
     extern "C" fn test_commit_callback(
+        _context: *const c_void,
         request: CommitRequest,
     ) -> OptionalValue<Handle<ExclusiveRustString>> {
         COMMIT_CALLED.with(|called| *called.borrow_mut() = true);
@@ -430,8 +453,13 @@ mod tests {
 
     #[test]
     fn test_get_uc_commit_client() {
-        let client =
-            unsafe { get_uc_commit_client(test_get_commits_callback, test_commit_callback) };
+        let client = unsafe {
+            get_uc_commit_client(
+                std::ptr::null(),
+                test_get_commits_callback,
+                test_commit_callback,
+            )
+        };
 
         let _client_ref: Arc<FfiUCCommitsClient> = unsafe { client.clone_as_arc() };
         unsafe { free_uc_commit_client(client) };
@@ -442,7 +470,13 @@ mod tests {
         GET_COMMITS_CALLED.with(|c| *c.borrow_mut() = false);
 
         let client =
-            unsafe { get_uc_commit_client(test_get_commits_callback, test_commit_callback) };
+            unsafe {
+            get_uc_commit_client(
+                std::ptr::null(),
+                test_get_commits_callback,
+                test_commit_callback,
+            )
+        };
 
         let client_arc: Arc<FfiUCCommitsClient> = unsafe { client.clone_as_arc() };
 
@@ -483,7 +517,13 @@ mod tests {
         SHOULD_FAIL_COMMIT.with(|f| *f.borrow_mut() = false);
 
         let client =
-            unsafe { get_uc_commit_client(test_get_commits_callback, test_commit_callback) };
+            unsafe {
+            get_uc_commit_client(
+                std::ptr::null(),
+                test_get_commits_callback,
+                test_commit_callback,
+            )
+        };
 
         let client_arc: Arc<FfiUCCommitsClient> = unsafe { client.clone_as_arc() };
 
@@ -532,7 +572,13 @@ mod tests {
         SHOULD_FAIL_COMMIT.with(|f| *f.borrow_mut() = true);
 
         let client =
-            unsafe { get_uc_commit_client(test_get_commits_callback, test_commit_callback) };
+            unsafe {
+            get_uc_commit_client(
+                std::ptr::null(),
+                test_get_commits_callback,
+                test_commit_callback,
+            )
+        };
 
         let client_arc: Arc<FfiUCCommitsClient> = unsafe { client.clone_as_arc() };
 
@@ -568,7 +614,13 @@ mod tests {
     #[test]
     fn test_get_uc_committer() {
         let client =
-            unsafe { get_uc_commit_client(test_get_commits_callback, test_commit_callback) };
+            unsafe {
+            get_uc_commit_client(
+                std::ptr::null(),
+                test_get_commits_callback,
+                test_commit_callback,
+            )
+        };
 
         let table_id = "test_table_id";
         let committer = unsafe {
