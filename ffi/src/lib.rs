@@ -1241,9 +1241,8 @@ mod tests {
         let path = "memory:///";
 
         // Test getting latest snapshot
-        let snapshot1 = unsafe {
-            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
-        };
+        let snapshot1 =
+            unsafe { ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy())) };
         let version1 = unsafe { version(snapshot1.shallow_copy()) };
         assert_eq!(version1, 0);
 
@@ -1259,9 +1258,8 @@ mod tests {
         assert_eq!(version2, 0);
 
         // Test getting non-existent snapshot
-        let snapshot_at_non_existent_version = unsafe {
-            snapshot_at_version(kernel_string_slice!(path), engine.shallow_copy(), 1)
-        };
+        let snapshot_at_non_existent_version =
+            unsafe { snapshot_at_version(kernel_string_slice!(path), engine.shallow_copy(), 1) };
         assert_extern_result_error_with_message(snapshot_at_non_existent_version, KernelError::GenericError, "Generic delta kernel error: LogSegment end version 0 not the same as the specified end version 1");
 
         let table_root = unsafe { snapshot_table_root(snapshot1.shallow_copy(), allocate_str) };
@@ -1316,9 +1314,8 @@ mod tests {
         let engine = engine_to_handle(Arc::new(engine), allocate_err);
 
         let path = "memory:///";
-        let snapshot = unsafe {
-            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
-        };
+        let snapshot =
+            unsafe { ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy())) };
 
         let did_checkpoint = unsafe {
             ok_or_panic(checkpoint_snapshot(
@@ -1407,9 +1404,8 @@ mod tests {
         unsafe { set_builder_with_multithreaded_executor(builder.as_mut().unwrap(), 2, 0) };
         let engine = unsafe { ok_or_panic(builder_build(builder)) };
 
-        let snapshot = unsafe {
-            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
-        };
+        let snapshot =
+            unsafe { ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy())) };
 
         let did_checkpoint = unsafe {
             ok_or_panic(checkpoint_snapshot(
@@ -1437,9 +1433,8 @@ mod tests {
         let engine = engine_to_handle(Arc::new(engine), allocate_err);
         let path = "memory:///";
 
-        let snapshot = unsafe {
-            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
-        };
+        let snapshot =
+            unsafe { ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy())) };
 
         let partition_count = unsafe { get_partition_column_count(snapshot.shallow_copy()) };
         assert_eq!(partition_count, 1, "Should have one partition");
@@ -1475,9 +1470,8 @@ mod tests {
         let path = "memory:///";
 
         // Get a non-existent snapshot, this will call allocate_null_err
-        let snapshot_at_non_existent_version = unsafe {
-            snapshot_at_version(kernel_string_slice!(path), engine.shallow_copy(), 1)
-        };
+        let snapshot_at_non_existent_version =
+            unsafe { snapshot_at_version(kernel_string_slice!(path), engine.shallow_copy(), 1) };
         assert!(snapshot_at_non_existent_version.is_err());
 
         unsafe { free_engine(engine) }
