@@ -93,7 +93,7 @@ mod tests {
         recover_string,
     };
     use crate::{
-        engine_to_handle, free_engine, free_snapshot, kernel_string_slice, snapshot, OptionalValue,
+        engine_to_handle, free_engine, free_snapshot, kernel_string_slice, snapshot,
     };
     use delta_kernel::engine::default::DefaultEngineBuilder;
     use delta_kernel::DeltaResult;
@@ -187,12 +187,7 @@ mod tests {
         add_commit(storage.as_ref(), 1, commit).await.unwrap();
 
         let snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
 
         let get_domain_metadata_helper = |domain: &str| unsafe {

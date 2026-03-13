@@ -861,97 +861,116 @@ pub unsafe extern "C" fn free_snapshot_builder(builder: *mut FfiSnapshotBuilder)
 // Deprecated snapshot functions (kept for one release to ease migration)
 // ---------------------------------------------------------------------------
 
-/// Get a snapshot from the specified table.
+/// Get the latest snapshot from the specified table.
 ///
 /// # Deprecated
 ///
-/// Use [`get_snapshot_builder`] / [`get_snapshot_builder_from`] + [`snapshot_builder_build`]
+/// Use [`get_snapshot_builder`] + [`snapshot_builder_build`] instead.
+///
+/// # Safety
+///
+/// Caller is responsible for passing valid handles and path pointer.
+#[no_mangle]
+#[deprecated]
+pub unsafe extern "C" fn snapshot(
+    path: KernelStringSlice,
+    engine: Handle<SharedExternEngine>,
+) -> ExternResult<Handle<SharedSnapshot>> {
+    let builder_ptr = match unsafe { get_snapshot_builder(path, engine) } {
+        ExternResult::Ok(ptr) => ptr,
+        ExternResult::Err(e) => return ExternResult::Err(e),
+    };
+    unsafe { snapshot_builder_build(builder_ptr) }
+}
+
+/// Get the latest snapshot from the specified table with a log tail for catalog-managed tables.
+///
+/// # Deprecated
+///
+/// Use [`get_snapshot_builder`] + [`snapshot_builder_set_log_tail`] + [`snapshot_builder_build`]
 /// instead.
 ///
 /// # Safety
 ///
-/// Caller is responsible for passing valid handles. Path must be valid when `old_snapshot` is None.
+/// Caller is responsible for passing valid handles and path pointer.
+/// The log_paths array and its contents must remain valid for the duration of this call.
+#[cfg(feature = "catalog-managed")]
 #[no_mangle]
-pub unsafe extern "C" fn snapshot(
-    path: OptionalValue<KernelStringSlice>,
+#[deprecated]
+pub unsafe extern "C" fn snapshot_with_log_tail(
+    path: KernelStringSlice,
     engine: Handle<SharedExternEngine>,
-    old_snapshot: OptionalValue<Handle<SharedSnapshot>>,
-    version: OptionalValue<Version>,
+    log_paths: log_path::LogPathArray,
 ) -> ExternResult<Handle<SharedSnapshot>> {
     let engine_ref = unsafe { engine.as_ref() };
-    let builder_ptr = match old_snapshot {
-        OptionalValue::Some(handle) => match unsafe { get_snapshot_builder_from(handle, engine) } {
-            ExternResult::Ok(ptr) => ptr,
-            ExternResult::Err(e) => return ExternResult::Err(e),
-        },
-        OptionalValue::None => match path {
-            OptionalValue::Some(p) => match unsafe { get_snapshot_builder(p, engine) } {
-                ExternResult::Ok(ptr) => ptr,
-                ExternResult::Err(e) => return ExternResult::Err(e),
-            },
-            OptionalValue::None => {
-                return Err(delta_kernel::Error::generic(
-                    "Path is required when not using an old snapshot",
-                ))
-                .into_extern_result(&engine_ref)
-            }
-        },
+    let builder_ptr = match unsafe { get_snapshot_builder(path, engine) } {
+        ExternResult::Ok(ptr) => ptr,
+        ExternResult::Err(e) => return ExternResult::Err(e),
     };
-    if let OptionalValue::Some(v) = version {
-        unsafe { snapshot_builder_set_version(&mut *builder_ptr, v) };
+    if let ExternResult::Err(e) =
+        unsafe { snapshot_builder_set_log_tail(&mut *builder_ptr, log_paths) }
+    {
+        unsafe { free_snapshot_builder(builder_ptr) };
+        return ExternResult::Err(e);
     }
     unsafe { snapshot_builder_build(builder_ptr) }
 }
 
-/// Get a snapshot with log tail support for catalog-managed tables.
+/// Get the snapshot from the specified table at a specific version.
 ///
 /// # Deprecated
 ///
-/// Use [`get_snapshot_builder`] / [`get_snapshot_builder_from`] + [`snapshot_builder_set_log_tail`]
-/// + [`snapshot_builder_build`] instead.
+/// Use [`get_snapshot_builder`] + [`snapshot_builder_set_version`] + [`snapshot_builder_build`]
+/// instead.
 ///
 /// # Safety
 ///
-/// Caller is responsible for passing valid handles. Path must be valid when `old_snapshot` is None.
+/// Caller is responsible for passing valid handles and path pointer.
+#[no_mangle]
+#[deprecated]
+pub unsafe extern "C" fn snapshot_at_version(
+    path: KernelStringSlice,
+    engine: Handle<SharedExternEngine>,
+    version: Version,
+) -> ExternResult<Handle<SharedSnapshot>> {
+    let builder_ptr = match unsafe { get_snapshot_builder(path, engine) } {
+        ExternResult::Ok(ptr) => ptr,
+        ExternResult::Err(e) => return ExternResult::Err(e),
+    };
+    unsafe { snapshot_builder_set_version(&mut *builder_ptr, version) };
+    unsafe { snapshot_builder_build(builder_ptr) }
+}
+
+/// Get the snapshot from the specified table at a specific version with a log tail.
+///
+/// # Deprecated
+///
+/// Use [`get_snapshot_builder`] + [`snapshot_builder_set_version`] +
+/// [`snapshot_builder_set_log_tail`] + [`snapshot_builder_build`] instead.
+///
+/// # Safety
+///
+/// Caller is responsible for passing valid handles and path pointer.
 /// The log_tail array and its contents must remain valid for the duration of this call.
 #[cfg(feature = "catalog-managed")]
 #[no_mangle]
-pub unsafe extern "C" fn snapshot_with_log_tail(
-    path: OptionalValue<KernelStringSlice>,
+#[deprecated]
+pub unsafe extern "C" fn snapshot_at_version_with_log_tail(
+    path: KernelStringSlice,
     engine: Handle<SharedExternEngine>,
-    old_snapshot: OptionalValue<Handle<SharedSnapshot>>,
-    version: OptionalValue<Version>,
-    log_tail: OptionalValue<log_path::LogPathArray>,
+    version: Version,
+    log_tail: log_path::LogPathArray,
 ) -> ExternResult<Handle<SharedSnapshot>> {
-    let engine_ref = unsafe { engine.as_ref() };
-    let builder_ptr = match old_snapshot {
-        OptionalValue::Some(handle) => match unsafe { get_snapshot_builder_from(handle, engine) } {
-            ExternResult::Ok(ptr) => ptr,
-            ExternResult::Err(e) => return ExternResult::Err(e),
-        },
-        OptionalValue::None => match path {
-            OptionalValue::Some(p) => match unsafe { get_snapshot_builder(p, engine) } {
-                ExternResult::Ok(ptr) => ptr,
-                ExternResult::Err(e) => return ExternResult::Err(e),
-            },
-            OptionalValue::None => {
-                return Err(delta_kernel::Error::generic(
-                    "Path is required when not using an old snapshot",
-                ))
-                .into_extern_result(&engine_ref)
-            }
-        },
+    let builder_ptr = match unsafe { get_snapshot_builder(path, engine) } {
+        ExternResult::Ok(ptr) => ptr,
+        ExternResult::Err(e) => return ExternResult::Err(e),
     };
-    if let OptionalValue::Some(v) = version {
-        unsafe { snapshot_builder_set_version(&mut *builder_ptr, v) };
-    }
-    if let OptionalValue::Some(paths) = log_tail {
-        if let ExternResult::Err(e) =
-            unsafe { snapshot_builder_set_log_tail(&mut *builder_ptr, paths) }
-        {
-            unsafe { free_snapshot_builder(builder_ptr) };
-            return ExternResult::Err(e);
-        }
+    unsafe { snapshot_builder_set_version(&mut *builder_ptr, version) };
+    if let ExternResult::Err(e) =
+        unsafe { snapshot_builder_set_log_tail(&mut *builder_ptr, log_tail) }
+    {
+        unsafe { free_snapshot_builder(builder_ptr) };
+        return ExternResult::Err(e);
     }
     unsafe { snapshot_builder_build(builder_ptr) }
 }
@@ -1223,23 +1242,17 @@ mod tests {
 
         // Test getting latest snapshot
         let snapshot1 = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
         let version1 = unsafe { version(snapshot1.shallow_copy()) };
         assert_eq!(version1, 0);
 
         // Test getting snapshot at version
         let snapshot2 = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
+            ok_or_panic(snapshot_at_version(
+                kernel_string_slice!(path),
                 engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::Some(0),
+                0,
             ))
         };
         let version2 = unsafe { version(snapshot2.shallow_copy()) };
@@ -1247,12 +1260,7 @@ mod tests {
 
         // Test getting non-existent snapshot
         let snapshot_at_non_existent_version = unsafe {
-            snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::Some(1),
-            )
+            snapshot_at_version(kernel_string_slice!(path), engine.shallow_copy(), 1)
         };
         assert_extern_result_error_with_message(snapshot_at_non_existent_version, KernelError::GenericError, "Generic delta kernel error: LogSegment end version 0 not the same as the specified end version 1");
 
@@ -1309,12 +1317,7 @@ mod tests {
 
         let path = "memory:///";
         let snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
 
         let did_checkpoint = unsafe {
@@ -1405,12 +1408,7 @@ mod tests {
         let engine = unsafe { ok_or_panic(builder_build(builder)) };
 
         let snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
 
         let did_checkpoint = unsafe {
@@ -1440,12 +1438,7 @@ mod tests {
         let path = "memory:///";
 
         let snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
 
         let partition_count = unsafe { get_partition_column_count(snapshot.shallow_copy()) };
@@ -1483,12 +1476,7 @@ mod tests {
 
         // Get a non-existent snapshot, this will call allocate_null_err
         let snapshot_at_non_existent_version = unsafe {
-            snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::Some(1),
-            )
+            snapshot_at_version(kernel_string_slice!(path), engine.shallow_copy(), 1)
         };
         assert!(snapshot_at_non_existent_version.is_err());
 
@@ -1531,11 +1519,9 @@ mod tests {
         };
         let snapshot = unsafe {
             ok_or_panic(snapshot_with_log_tail(
-                OptionalValue::Some(kernel_string_slice!(path)),
+                kernel_string_slice!(path),
                 engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-                OptionalValue::Some(log_tail.clone()),
+                log_tail.clone(),
             ))
         };
         let snapshot_version = unsafe { version(snapshot.shallow_copy()) };
@@ -1543,12 +1529,11 @@ mod tests {
 
         // Test getting snapshot at version
         let snapshot2 = unsafe {
-            ok_or_panic(snapshot_with_log_tail(
-                OptionalValue::Some(kernel_string_slice!(path)),
+            ok_or_panic(snapshot_at_version_with_log_tail(
+                kernel_string_slice!(path),
                 engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::Some(1),
-                OptionalValue::Some(log_tail),
+                1,
+                log_tail,
             ))
         };
         let snapshot_version = unsafe { version(snapshot2.shallow_copy()) };
@@ -1576,12 +1561,7 @@ mod tests {
 
         // Create initial snapshot at version 0
         let old_snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
         let old_version = unsafe { version(old_snapshot.shallow_copy()) };
         assert_eq!(old_version, 0);
@@ -1602,24 +1582,23 @@ mod tests {
 
         // Create new snapshot using old snapshot for optimization (latest version)
         let new_snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
+            let ptr = ok_or_panic(get_snapshot_builder_from(
+                old_snapshot.shallow_copy(),
                 engine.shallow_copy(),
-                OptionalValue::Some(old_snapshot.shallow_copy()),
-                OptionalValue::None,
-            ))
+            ));
+            ok_or_panic(snapshot_builder_build(ptr))
         };
         let new_version = unsafe { version(new_snapshot.shallow_copy()) };
         assert_eq!(new_version, 2);
 
         // Create snapshot at specific version using old snapshot for optimization
         let snapshot_at_v1 = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
+            let ptr = ok_or_panic(get_snapshot_builder_from(
+                old_snapshot.shallow_copy(),
                 engine.shallow_copy(),
-                OptionalValue::Some(old_snapshot.shallow_copy()),
-                OptionalValue::Some(1),
-            ))
+            ));
+            snapshot_builder_set_version(&mut *ptr, 1);
+            ok_or_panic(snapshot_builder_build(ptr))
         };
         let v1_version = unsafe { version(snapshot_at_v1.shallow_copy()) };
         assert_eq!(v1_version, 1);
@@ -1651,12 +1630,7 @@ mod tests {
 
         // Create initial snapshot at version 0
         let old_snapshot = unsafe {
-            ok_or_panic(snapshot(
-                OptionalValue::Some(kernel_string_slice!(path)),
-                engine.shallow_copy(),
-                OptionalValue::None,
-                OptionalValue::None,
-            ))
+            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
         };
         let old_version = unsafe { version(old_snapshot.shallow_copy()) };
         assert_eq!(old_version, 0);
@@ -1700,26 +1674,25 @@ mod tests {
 
         // Create new snapshot using old snapshot for optimization with log tail
         let new_snapshot = unsafe {
-            ok_or_panic(snapshot_with_log_tail(
-                OptionalValue::Some(kernel_string_slice!(path)),
+            let ptr = ok_or_panic(get_snapshot_builder_from(
+                old_snapshot.shallow_copy(),
                 engine.shallow_copy(),
-                OptionalValue::Some(old_snapshot.shallow_copy()),
-                OptionalValue::None,
-                OptionalValue::Some(log_tail_array.clone()),
-            ))
+            ));
+            ok_or_panic(snapshot_builder_set_log_tail(&mut *ptr, log_tail_array.clone()));
+            ok_or_panic(snapshot_builder_build(ptr))
         };
         let new_version = unsafe { version(new_snapshot.shallow_copy()) };
         assert_eq!(new_version, 2);
 
         // Create snapshot at specific version using old snapshot with log tail
         let snapshot_at_v1 = unsafe {
-            ok_or_panic(snapshot_with_log_tail(
-                OptionalValue::Some(kernel_string_slice!(path)),
+            let ptr = ok_or_panic(get_snapshot_builder_from(
+                old_snapshot.shallow_copy(),
                 engine.shallow_copy(),
-                OptionalValue::Some(old_snapshot.shallow_copy()),
-                OptionalValue::Some(1),
-                OptionalValue::Some(log_tail_array),
-            ))
+            ));
+            snapshot_builder_set_version(&mut *ptr, 1);
+            ok_or_panic(snapshot_builder_set_log_tail(&mut *ptr, log_tail_array));
+            ok_or_panic(snapshot_builder_build(ptr))
         };
         let v1_version = unsafe { version(snapshot_at_v1.shallow_copy()) };
         assert_eq!(v1_version, 1);
