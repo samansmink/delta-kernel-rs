@@ -502,8 +502,10 @@ mod tests {
 
             let snapshot = unsafe {
                 ok_or_panic(crate::snapshot(
-                    kernel_string_slice!(table_path_str),
+                    OptionalValue::Some(kernel_string_slice!(table_path_str)),
                     engine.shallow_copy(),
+                    OptionalValue::None,
+                    OptionalValue::None,
                 ))
             };
 
