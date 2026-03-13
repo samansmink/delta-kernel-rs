@@ -1554,9 +1554,8 @@ mod tests {
         let path = "memory:///";
 
         // Create initial snapshot at version 0
-        let old_snapshot = unsafe {
-            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
-        };
+        let old_snapshot =
+            unsafe { ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy())) };
         let old_version = unsafe { version(old_snapshot.shallow_copy()) };
         assert_eq!(old_version, 0);
 
@@ -1623,9 +1622,8 @@ mod tests {
         let path = "memory:///";
 
         // Create initial snapshot at version 0
-        let old_snapshot = unsafe {
-            ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy()))
-        };
+        let old_snapshot =
+            unsafe { ok_or_panic(snapshot(kernel_string_slice!(path), engine.shallow_copy())) };
         let old_version = unsafe { version(old_snapshot.shallow_copy()) };
         assert_eq!(old_version, 0);
 
@@ -1672,7 +1670,10 @@ mod tests {
                 old_snapshot.shallow_copy(),
                 engine.shallow_copy(),
             ));
-            ok_or_panic(snapshot_builder_set_log_tail(&mut *ptr, log_tail_array.clone()));
+            ok_or_panic(snapshot_builder_set_log_tail(
+                &mut *ptr,
+                log_tail_array.clone(),
+            ));
             ok_or_panic(snapshot_builder_build(ptr))
         };
         let new_version = unsafe { version(new_snapshot.shallow_copy()) };
